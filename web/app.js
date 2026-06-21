@@ -49,6 +49,33 @@ function appendMessage(role, content, meta = "") {
 
   chatStream.appendChild(message);
   chatStream.scrollTop = chatStream.scrollHeight;
+  return message;
+}
+
+function replaceAssistantMessage(message, content, meta = "") {
+  if (!message) {
+    return;
+  }
+
+  message.className = "message assistant";
+  const body = message.querySelector(".message-content");
+  if (body) {
+    body.innerHTML = renderAssistantAnswer(content);
+  }
+
+  let footer = message.querySelector(".message-meta");
+  if (meta) {
+    if (!footer) {
+      footer = document.createElement("div");
+      footer.className = "message-meta";
+      message.appendChild(footer);
+    }
+    footer.textContent = meta;
+  } else if (footer) {
+    footer.remove();
+  }
+
+  chatStream.scrollTop = chatStream.scrollHeight;
 }
 
 function renderAssistantAnswer(text) {
@@ -420,8 +447,9 @@ chatForm.addEventListener("submit", async (event) => {
   }
 
   appendMessage("user", message);
+  const pendingMessage = appendMessage("assistant pending", "AI 生成中...");
   messageInput.value = "";
-  setBusy(true, "生成中");
+  setBusy(true, "AI 生成中");
 
   try {
     const result = await requestJson("/chat", {
@@ -434,10 +462,15 @@ chatForm.addEventListener("submit", async (event) => {
     const documentChunks = result.retrieved_document_chunk_ids.length
       ? `参考 Chunk：${result.retrieved_document_chunk_ids.join(", ")}`
       : "未召回文档";
-    appendMessage("assistant", result.answer, `当前 Turn：${result.turn_index}；${retrieved}；${documentChunks}`);
+    replaceAssistantMessage(
+      pendingMessage,
+      result.answer,
+      `当前 Turn：${result.turn_index}；${retrieved}；${documentChunks}`,
+    );
     await loadSessions();
     await loadHistory();
   } catch (error) {
+    pendingMessage.remove();
     appendMessage("error", error.message);
   } finally {
     setBusy(false);
