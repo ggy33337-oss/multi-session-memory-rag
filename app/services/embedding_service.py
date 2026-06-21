@@ -1,43 +1,32 @@
 from openai import OpenAI
 
-from app.core.config import Settings
+from app.core.config import get_settings
 
 
-class EmbeddingService:
-    def __init__(self, settings: Settings) -> None:
-        self.settings = settings
-        self.provider = settings.embedding_provider.lower()
-        self.dimension = settings.embedding_dimension
-        self.client = self._build_client()
+def embed_text(text: str) -> list[float]:
+    settings = get_settings()
+    cleaned_text = text.strip()
+    if not cleaned_text:
+        raise ValueError("Embedding text cannot be empty.")
 
-    def embed(self, text: str) -> list[float]:
-        cleaned_text = text.strip()
-        if not cleaned_text:
-            raise ValueError("Embedding text cannot be empty.")
+    if settings.embedding_provider.lower() != "openai":
+        raise ValueError(f"Unsupported embedding provider: {settings.embedding_provider}")
 
-        if self.provider == "openai":
-            return self._openai_embed(cleaned_text)
-        raise ValueError(f"Unsupported embedding provider: {self.settings.embedding_provider}")
+    client = build_openai_client()
+    response = client.embeddings.create(
+        model=settings.embedding_model,
+        input=cleaned_text,
+        dimensions=settings.embedding_dimension,
+        encoding_format="float",
+    )
+    return response.data[0].embedding
 
-    def _build_client(self) -> OpenAI | None:
-        if self.provider != "openai":
-            return None
-        kwargs = {}
-        if self.settings.openai_api_key:
-            kwargs["api_key"] = self.settings.openai_api_key
-        if self.settings.openai_base_url:
-            kwargs["base_url"] = self.settings.openai_base_url
-        return OpenAI(**kwargs)
 
-    def _openai_embed(self, text: str) -> list[float]:
-        if self.client is None:
-            raise RuntimeError("OpenAI client is not initialized.")
-        response = self.client.embeddings.create(
-            model=self.settings.embedding_model,
-            input=text,
-            dimensions=self.settings.embedding_dimension,
-            encoding_format="float",
-        )
-        vector = response.data[0].embedding
-        self.dimension = len(vector)
-        return vector
+def build_openai_client() -> OpenAI:
+    settings = get_settings()
+    kwargs = {}
+    if settings.openai_api_key:
+        kwargs["api_key"] = settings.openai_api_key
+    if settings.openai_base_url:
+        kwargs["base_url"] = settings.openai_base_url
+    return OpenAI(**kwargs)

@@ -3,10 +3,24 @@ const chatForm = document.querySelector("#chat-form");
 const messageInput = document.querySelector("#message-input");
 const sendButton = document.querySelector("#send-button");
 const requestState = document.querySelector("#request-state");
+const activeSessionTitle = document.querySelector("#active-session-title");
+const sessionList = document.querySelector("#session-list");
+const newSessionButton = document.querySelector("#new-session");
+const refreshSessionsButton = document.querySelector("#refresh-sessions");
 const historyList = document.querySelector("#history-list");
 const refreshHistoryButton = document.querySelector("#refresh-history");
 const clearHistoryButton = document.querySelector("#clear-history");
 const serviceStatus = document.querySelector("#service-status");
+const documentForm = document.querySelector("#document-form");
+const documentInput = document.querySelector("#document-input");
+const uploadDocumentButton = document.querySelector("#upload-document");
+const refreshDocumentsButton = document.querySelector("#refresh-documents");
+const clearDocumentsButton = document.querySelector("#clear-documents");
+const documentState = document.querySelector("#document-state");
+const documentList = document.querySelector("#document-list");
+
+let currentSessionId = null;
+let sessions = [];
 
 function appendMessage(role, content, meta = "") {
   const message = document.createElement("article");
@@ -153,10 +167,8 @@ function setBusy(isBusy, text = "") {
 }
 
 async function requestJson(url, options = {}) {
-  const response = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  const headers = options.body instanceof FormData ? {} : { "Content-Type": "application/json" };
+  const response = await fetch(url, { headers, ...options });
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -172,16 +184,116 @@ async function requestJson(url, options = {}) {
 
 async function loadHealth() {
   try {
-    await requestJson("/health");
-    serviceStatus.textContent = "服务在线";
+    const health = await requestJson("/health");
+    serviceStatus.textContent = health.database === "available" ? "服务在线" : "数据库未连接";
   } catch {
     serviceStatus.textContent = "服务不可用";
   }
 }
 
-async function loadHistory() {
+async function ensureActiveSession() {
+  sessions = await requestJson("/sessions");
+  if (!sessions.length) {
+    const session = await requestJson("/sessions", {
+      method: "POST",
+      body: JSON.stringify({ title: "新会话" }),
+    });
+    sessions = [session];
+  }
+
+  if (!currentSessionId || !sessions.some((session) => session.session_id === currentSessionId)) {
+    currentSessionId = sessions[0].session_id;
+  }
+
+  renderSessions();
+  updateActiveSessionTitle();
+}
+
+async function loadSessions() {
   try {
-    const turns = await requestJson("/history/recent?limit=5");
+    await ensureActiveSession();
+  } catch (error) {
+    sessionList.innerHTML = "";
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "会话读取失败";
+    sessionList.appendChild(empty);
+    appendMessage("error", error.message);
+  }
+}
+
+function renderSessions() {
+  sessionList.innerHTML = "";
+
+  sessions.forEach((session) => {
+    const item = document.createElement("button");
+    item.className = `session-item${session.session_id === currentSessionId ? " active" : ""}`;
+    item.type = "button";
+
+    const title = document.createElement("strong");
+    title.textContent = session.title;
+
+    const meta = document.createElement("span");
+    meta.textContent = `${session.turn_count} turns`;
+
+    if (session.last_message) {
+      const preview = document.createElement("span");
+      preview.className = "session-preview";
+      preview.textContent = summarizeText(session.last_message, 36);
+      item.append(title, preview, meta);
+    } else {
+      item.append(title, meta);
+    }
+
+    item.addEventListener("click", () => switchSession(session.session_id));
+    sessionList.appendChild(item);
+  });
+}
+
+function updateActiveSessionTitle() {
+  const session = sessions.find((item) => item.session_id === currentSessionId);
+  activeSessionTitle.textContent = session ? session.title : "多会话长期记忆 RAG 问答系统";
+}
+
+async function switchSession(sessionId) {
+  if (currentSessionId === sessionId) {
+    return;
+  }
+
+  currentSessionId = sessionId;
+  renderSessions();
+  updateActiveSessionTitle();
+  await loadHistory();
+  await loadConversation();
+  messageInput.focus();
+}
+
+async function createSession() {
+  newSessionButton.disabled = true;
+  try {
+    const session = await requestJson("/sessions", {
+      method: "POST",
+      body: JSON.stringify({ title: "新会话" }),
+    });
+    currentSessionId = session.session_id;
+    await loadSessions();
+    await loadHistory();
+    chatStream.innerHTML = "";
+    messageInput.focus();
+  } catch (error) {
+    appendMessage("error", error.message);
+  } finally {
+    newSessionButton.disabled = false;
+  }
+}
+
+async function loadHistory() {
+  if (!currentSessionId) {
+    return;
+  }
+
+  try {
+    const turns = await requestJson(`/history/recent?session_id=${currentSessionId}&limit=5`);
     historyList.innerHTML = "";
 
     if (!turns.length) {
@@ -200,7 +312,7 @@ async function loadHistory() {
         item.className = "history-item";
 
         const title = document.createElement("strong");
-        title.textContent = `Turn ${turn.turn_id}`;
+        title.textContent = `Turn ${turn.turn_index}`;
 
         const content = document.createElement("p");
         content.textContent = turn.user;
@@ -221,6 +333,80 @@ async function loadHistory() {
   }
 }
 
+async function loadConversation() {
+  if (!currentSessionId) {
+    return;
+  }
+
+  try {
+    const turns = await requestJson(`/history?session_id=${currentSessionId}`);
+    chatStream.innerHTML = "";
+    turns.forEach((turn) => {
+      appendMessage("user", turn.user);
+      appendMessage("assistant", turn.assistant, `Turn：${turn.turn_index}`);
+    });
+  } catch (error) {
+    chatStream.innerHTML = "";
+    appendMessage("error", error.message);
+  }
+}
+
+async function loadDocuments() {
+  try {
+    const documents = await requestJson("/documents");
+    documentList.innerHTML = "";
+
+    if (!documents.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = "暂无文档";
+      documentList.appendChild(empty);
+      return;
+    }
+
+    documents
+      .slice()
+      .reverse()
+      .forEach((documentItem) => {
+        const item = document.createElement("article");
+        item.className = "document-item";
+
+        const title = document.createElement("strong");
+        title.textContent = documentItem.filename;
+
+        const meta = document.createElement("p");
+        meta.textContent = `Document ${documentItem.document_id} · ${documentItem.chunk_count} chunks`;
+
+        const remove = document.createElement("button");
+        remove.className = "text-button";
+        remove.type = "button";
+        remove.textContent = "删除";
+        remove.addEventListener("click", () => deleteDocument(documentItem.document_id));
+
+        item.append(title, meta, remove);
+        documentList.appendChild(item);
+      });
+  } catch {
+    documentList.innerHTML = "";
+    const item = document.createElement("p");
+    item.className = "empty";
+    item.textContent = "文档读取失败";
+    documentList.appendChild(item);
+  }
+}
+
+async function deleteDocument(documentId) {
+  documentState.textContent = "删除中";
+  try {
+    await requestJson(`/documents/${documentId}`, { method: "DELETE" });
+    await loadDocuments();
+    documentState.textContent = "";
+  } catch (error) {
+    documentState.textContent = "删除失败";
+    appendMessage("error", error.message);
+  }
+}
+
 chatForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -228,6 +414,9 @@ chatForm.addEventListener("submit", async (event) => {
   if (!message) {
     messageInput.focus();
     return;
+  }
+  if (!currentSessionId) {
+    await ensureActiveSession();
   }
 
   appendMessage("user", message);
@@ -237,12 +426,16 @@ chatForm.addEventListener("submit", async (event) => {
   try {
     const result = await requestJson("/chat", {
       method: "POST",
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ session_id: currentSessionId, message }),
     });
-    const retrieved = result.retrieved_turn_ids.length
-      ? `参考 Turn：${result.retrieved_turn_ids.join(", ")}`
+    const retrieved = result.retrieved_turn_indexes.length
+      ? `参考 Turn：${result.retrieved_turn_indexes.join(", ")}`
       : "未召回额外历史";
-    appendMessage("assistant", result.answer, `当前 Turn：${result.turn_id}；${retrieved}`);
+    const documentChunks = result.retrieved_document_chunk_ids.length
+      ? `参考 Chunk：${result.retrieved_document_chunk_ids.join(", ")}`
+      : "未召回文档";
+    appendMessage("assistant", result.answer, `当前 Turn：${result.turn_index}；${retrieved}；${documentChunks}`);
+    await loadSessions();
     await loadHistory();
   } catch (error) {
     appendMessage("error", error.message);
@@ -252,13 +445,56 @@ chatForm.addEventListener("submit", async (event) => {
   }
 });
 
+newSessionButton.addEventListener("click", createSession);
+
+refreshSessionsButton.addEventListener("click", loadSessions);
+
 refreshHistoryButton.addEventListener("click", loadHistory);
 
+refreshDocumentsButton.addEventListener("click", loadDocuments);
+
+documentForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const file = documentInput.files[0];
+  if (!file) {
+    documentInput.focus();
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  uploadDocumentButton.disabled = true;
+  documentInput.disabled = true;
+  documentState.textContent = "上传并切片中";
+
+  try {
+    const result = await requestJson("/documents", {
+      method: "POST",
+      body: formData,
+    });
+    documentInput.value = "";
+    documentState.textContent = `已入库 ${result.chunk_count} 个切片`;
+    await loadDocuments();
+  } catch (error) {
+    documentState.textContent = "上传失败";
+    appendMessage("error", error.message);
+  } finally {
+    uploadDocumentButton.disabled = false;
+    documentInput.disabled = false;
+  }
+});
+
 clearHistoryButton.addEventListener("click", async () => {
+  if (!currentSessionId) {
+    return;
+  }
+
   clearHistoryButton.disabled = true;
   try {
-    await requestJson("/history", { method: "DELETE" });
+    await requestJson(`/history?session_id=${currentSessionId}`, { method: "DELETE" });
     chatStream.innerHTML = "";
+    await loadSessions();
     await loadHistory();
   } catch (error) {
     appendMessage("error", error.message);
@@ -267,5 +503,27 @@ clearHistoryButton.addEventListener("click", async () => {
   }
 });
 
-loadHealth();
-loadHistory();
+clearDocumentsButton.addEventListener("click", async () => {
+  clearDocumentsButton.disabled = true;
+  documentState.textContent = "清空中";
+  try {
+    await requestJson("/documents", { method: "DELETE" });
+    await loadDocuments();
+    documentState.textContent = "";
+  } catch (error) {
+    documentState.textContent = "清空失败";
+    appendMessage("error", error.message);
+  } finally {
+    clearDocumentsButton.disabled = false;
+  }
+});
+
+async function init() {
+  await loadHealth();
+  await loadSessions();
+  await loadHistory();
+  await loadConversation();
+  await loadDocuments();
+}
+
+init();

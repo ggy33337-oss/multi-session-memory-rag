@@ -1,4 +1,3 @@
-from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -8,12 +7,16 @@ class Settings(BaseSettings):
     app_host: str = "127.0.0.1"
     app_port: int = 8000
 
-    conversation_path: Path = Path("data/conversation.json")
-    faiss_index_path: Path = Path("data/faiss.index")
-    vector_map_path: Path = Path("data/vector_map.json")
+    database_url: str = "postgresql://memory_user:memory_password@127.0.0.1:5432/memory_rag"
+
+    document_dir: Path = Path("data/documents/uploads")
 
     recent_turns: int = 5
     retrieve_top_k: int = 3
+    document_retrieve_top_k: int = 3
+    document_chunk_size: int = 700
+    document_chunk_overlap: int = 100
+    document_similarity_threshold: float = 0.35
 
     embedding_provider: str = "openai"
     embedding_model: str = "text-embedding-v4"
@@ -31,7 +34,22 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        return (
+            init_settings,
+            dotenv_settings,
+            env_settings,
+            file_secret_settings,
+        )
 
-@lru_cache
+
 def get_settings() -> Settings:
     return Settings()

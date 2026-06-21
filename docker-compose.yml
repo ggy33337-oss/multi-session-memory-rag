@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: memory-rag-postgres
+    environment:
+      POSTGRES_DB: memory_rag
+      POSTGRES_USER: memory_user
+      POSTGRES_PASSWORD: memory_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
