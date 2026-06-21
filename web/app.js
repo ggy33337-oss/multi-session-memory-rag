@@ -190,7 +190,8 @@ function summarizeText(text, maxLength = 64) {
 function setBusy(isBusy, text = "") {
   sendButton.disabled = isBusy;
   messageInput.disabled = isBusy;
-  requestState.textContent = text;
+  requestState.textContent = "";
+  requestState.classList.toggle("is-busy", false);
 }
 
 async function requestJson(url, options = {}) {
@@ -447,9 +448,9 @@ chatForm.addEventListener("submit", async (event) => {
   }
 
   appendMessage("user", message);
-  const pendingMessage = appendMessage("assistant pending", "AI 生成中...");
+  const pendingMessage = appendMessage("assistant pending", "AI生成中");
   messageInput.value = "";
-  setBusy(true, "AI 生成中");
+  setBusy(true, "AI生成中");
 
   try {
     const result = await requestJson("/chat", {

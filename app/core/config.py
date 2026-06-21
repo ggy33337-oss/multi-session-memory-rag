@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_host: str = "127.0.0.1"
-    app_port: int = 8000
+    app_port: int = 8001
 
     database_url: str = "postgresql://memory_user:memory_password@127.0.0.1:5432/memory_rag"
 

@@ -99,7 +99,7 @@ docker compose up -d
 
 ```env
 APP_HOST=127.0.0.1
-APP_PORT=8000
+APP_PORT=8001
 DATABASE_URL=postgresql://memory_user:memory_password@127.0.0.1:5432/memory_rag
 
 OPENAI_API_KEY=你的密钥
@@ -114,10 +114,10 @@ python -m app.main
 
 访问：
 
-- 前端页面: `http://127.0.0.1:8000/`
-- Swagger: `http://127.0.0.1:8000/docs`
+- 前端页面: `http://127.0.0.1:8001/`
+- Swagger: `http://127.0.0.1:8001/docs`
 
-说明：项目默认端口是 `8000`。如果你在本地 `.env` 中把 `APP_PORT` 改成了其他端口，例如 `8001`，则访问地址也要同步改为 `http://127.0.0.1:8001/` 和 `http://127.0.0.1:8001/docs`。
+说明：项目默认端口是 `8001`。如果你在本地 `.env` 中把 `APP_PORT` 改成了其他端口，则访问地址也要同步调整。
 
 ## 接口
 
